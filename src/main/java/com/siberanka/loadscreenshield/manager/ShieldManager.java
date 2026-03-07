@@ -69,15 +69,14 @@ public class ShieldManager {
         player.sendMessage(msg);
 
         if (configManager.getBoolean("title.enabled", true)) {
-            Component titleMain = langManager.getMessage("title-main");
-            Component titleSub = langManager.getMessage("title-sub");
-            player.showTitle(net.kyori.adventure.title.Title.title(titleMain, titleSub));
-        }
-
-        if (configManager.getBoolean("title.enabled", true)) {
-            Component titleMain = langManager.getMessage("title-main");
-            Component titleSub = langManager.getMessage("title-sub");
-            player.showTitle(net.kyori.adventure.title.Title.title(titleMain, titleSub));
+            // Repeat the title every second (handled by scheduleRepeatingTaskTask)
+            scheduleRepeatingTaskTask(player.getLocation(), () -> {
+                if (player.isOnline() && isShielded(player)) {
+                    Component titleMain = langManager.getMessage("title-main");
+                    Component titleSub = langManager.getMessage("title-sub");
+                    player.showTitle(net.kyori.adventure.title.Title.title(titleMain, titleSub));
+                }
+            });
         }
 
         // Apply blindness and fake blocks
@@ -194,6 +193,18 @@ public class ShieldManager {
             Bukkit.getRegionScheduler().runDelayed(plugin, loc, t -> task.run(), delayTicks);
         } else {
             Bukkit.getScheduler().runTaskLater(plugin, task, delayTicks);
+        }
+    }
+
+    private void scheduleRepeatingTaskTask(Location loc, Runnable task) {
+        if (isFolia) {
+            Bukkit.getRegionScheduler().runAtFixedRate(plugin, loc, t -> {
+                task.run();
+                if (!t.getOwningPlugin().isEnabled() || t.isCancelled())
+                    t.cancel();
+            }, 1L, 20L); // 1 tick delay, 20 tick period
+        } else {
+            Bukkit.getScheduler().runTaskTimerAsynchronously(plugin, task, 1L, 20L);
         }
     }
 }

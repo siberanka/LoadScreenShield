@@ -15,8 +15,6 @@ import java.util.Collections;
 import java.util.List;
 
 import com.github.retrooper.packetevents.PacketEvents;
-import com.github.retrooper.packetevents.settings.PacketEventsSettings;
-import io.github.retrooper.packetevents.factory.spigot.SpigotPacketEventsBuilder;
 
 public class LoadScreenShield extends JavaPlugin implements CommandExecutor, TabCompleter {
 
@@ -26,12 +24,6 @@ public class LoadScreenShield extends JavaPlugin implements CommandExecutor, Tab
 
     @Override
     public void onEnable() {
-        PacketEvents.setAPI(SpigotPacketEventsBuilder.build(this));
-        PacketEvents.getAPI().getSettings()
-                .bStats(false)
-                .checkForUpdates(false);
-        PacketEvents.getAPI().load();
-        PacketEvents.getAPI().init();
         this.configManager = new ConfigManager(this);
         this.langManager = new LangManager(this, configManager);
         this.shieldManager = new ShieldManager(this, configManager, langManager);
@@ -52,7 +44,6 @@ public class LoadScreenShield extends JavaPlugin implements CommandExecutor, Tab
         if (shieldManager != null) {
             shieldManager.cleanupAll();
         }
-        PacketEvents.getAPI().terminate();
         if (langManager != null) {
             getServer().getConsoleSender().sendMessage(langManager.getMessage("plugin-disabled"));
         }
