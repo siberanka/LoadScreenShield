@@ -90,7 +90,7 @@ public class EventListener implements Listener {
                     event.getFrom().getY() != event.getTo().getY() ||
                     event.getFrom().getZ() != event.getTo().getZ()) {
                 event.setCancelled(true);
-                event.getPlayer().sendActionBar(plugin.getLangManager().getMessage("cannot-move"));
+                event.getPlayer().sendActionBar(plugin.getLangManager().getRawMessage("cannot-move"));
             }
         }
     }

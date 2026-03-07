@@ -54,8 +54,9 @@ public class LangManager {
         }
 
         if (defaultStream != null) {
-            YamlConfiguration defaultConfig = YamlConfiguration.loadConfiguration(new InputStreamReader(defaultStream, StandardCharsets.UTF_8));
-            
+            YamlConfiguration defaultConfig = YamlConfiguration
+                    .loadConfiguration(new InputStreamReader(defaultStream, StandardCharsets.UTF_8));
+
             for (String key : defaultConfig.getKeys(true)) {
                 if (!langConfig.contains(key)) {
                     langConfig.set(key, defaultConfig.get(key));
@@ -91,5 +92,10 @@ public class LangManager {
         String msg = langConfig.getString(key, "<red>Missing lang key: " + key + "</red>");
         String prefix = configManager.getPrefix();
         return MiniMessage.miniMessage().deserialize(prefix + msg);
+    }
+
+    public Component getRawMessage(String key) {
+        String msg = langConfig.getString(key, "<red>Missing lang key: " + key + "</red>");
+        return MiniMessage.miniMessage().deserialize(msg);
     }
 }

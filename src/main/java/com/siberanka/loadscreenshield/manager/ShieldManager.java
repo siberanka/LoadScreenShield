@@ -30,9 +30,6 @@ public class ShieldManager {
     // Players currently shielded
     private final Set<UUID> currentlyShielded = ConcurrentHashMap.newKeySet();
 
-    // Players who have ever entered the shield state in this server session
-    private final Set<UUID> shieldedEverSession = ConcurrentHashMap.newKeySet();
-
     private final boolean isFolia;
 
     public ShieldManager(JavaPlugin plugin, ConfigManager configManager, LangManager langManager) {
@@ -50,9 +47,6 @@ public class ShieldManager {
     }
 
     public void activateShield(Player player) {
-        if (shieldedEverSession.contains(player.getUniqueId())) {
-            return;
-        }
 
         // Floodgate Check: Bedrock players do not download Java resource packs the same
         // way
@@ -63,7 +57,6 @@ public class ShieldManager {
         }
 
         currentlyShielded.add(player.getUniqueId());
-        shieldedEverSession.add(player.getUniqueId());
 
         Component msg = langManager.getMessage("shield-activated");
         player.sendMessage(msg);
@@ -72,8 +65,8 @@ public class ShieldManager {
             // Repeat the title every second (handled by scheduleRepeatingTaskTask)
             scheduleRepeatingTaskTask(player.getLocation(), () -> {
                 if (player.isOnline() && isShielded(player)) {
-                    Component titleMain = langManager.getMessage("title-main");
-                    Component titleSub = langManager.getMessage("title-sub");
+                    Component titleMain = langManager.getRawMessage("title-main");
+                    Component titleSub = langManager.getRawMessage("title-sub");
                     player.showTitle(net.kyori.adventure.title.Title.title(titleMain, titleSub));
                 }
             });
