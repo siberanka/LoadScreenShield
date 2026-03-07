@@ -1,0 +1,19 @@
+reload-success: "<green>Eklenti yapılandırması ve dil dosyaları başarıyla yeniden yüklendi.</green>"
+no-permission: "<red>Bunu yapmak için izniniz yok.</red>"
+shield-activated: "<yellow>Kaynak paketi yükleniyor. Koruma altındasınız ve hareket edemezsiniz.</yellow>"
+shield-deactivated: "<green>Kaynak paketi yüklendi. Koruma kaldırıldı, artık hareket edebilirsiniz!</green>"
+shield-timeout: "<red>Kaynak paketi yüklemesi zaman aşımına uğradı. Koruma kaldırıldı.</red>"
+shield-declined: "<red>Kaynak paketi reddedildi. Koruma kaldırıldı.</red>"
+shield-failed: "<red>Kaynak paketi indirmesi başarısız oldu. Koruma kaldırıldı.</red>"
+
+# Koruma aktifken gösterilen başlık (title)
+title-main: "<gold>Kaynak Paketi Yükleniyor</gold>"
+title-sub: "<gray>Lütfen paket uygulanırken bekleyiniz...</gray>"
+
+# Koruma mesajları
+cannot-move: "<red>Kaynak paketi yüklenirken hareket edemezsiniz!</red>"
+cannot-command: "<red>Kaynak paketi yüklenirken komut kullanamazsınız!</red>"
+
+# Konsol mesajları
+plugin-enabled: "<green>LoadScreenShield başarıyla aktif edildi! (Folia Destekli)</green>"
+plugin-disabled: "<red>LoadScreenShield devredışı bırakıldı!</red>"

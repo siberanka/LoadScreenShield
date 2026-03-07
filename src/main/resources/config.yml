@@ -1,0 +1,23 @@
+# LoadScreenShield Main Configuration
+
+# Default language file to use. (Available: en, tr)
+lang: en
+
+# Prefix for all messages. (Can use MiniMessage formats like <gray>)
+prefix: "<gray>[<gold>LoadScreenShield</gold>]</gray> "
+
+# How many seconds after joining should the shield expire if resource pack isn't accepted/rejected?
+timeout-seconds: 120
+
+# Which block type should be used for the dark box shielding the player?
+shield-block-type: BLACK_WOOL
+
+# Title settings
+title:
+  enabled: true
+
+# Protection settings (enable/disable specific restrictions)
+protection:
+  enabled: true
+  cancel-movement: true
+  cancel-commands: true

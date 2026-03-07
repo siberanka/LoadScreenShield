@@ -1,0 +1,19 @@
+reload-success: "<green>Plugin configuration and language files reloaded successfully.</green>"
+no-permission: "<red>You don't have permission to do this.</red>"
+shield-activated: "<yellow>Resource pack loading. You are shielded and cannot move.</yellow>"
+shield-deactivated: "<green>Resource pack loaded. Shield removed, you can move now!</green>"
+shield-timeout: "<red>Resource pack loading timed out. Shield removed.</red>"
+shield-declined: "<red>Resource pack declined. Shield removed.</red>"
+shield-failed: "<red>Resource pack download failed. Shield removed.</red>"
+
+# Title shown when the shield is active
+title-main: "<gold>Loading Resource Pack</gold>"
+title-sub: "<gray>Please wait while the pack applies...</gray>"
+
+# Protection messages
+cannot-move: "<red>You cannot move while loading the resource pack!</red>"
+cannot-command: "<red>You cannot use commands while loading the resource pack!</red>"
+
+# Console messages
+plugin-enabled: "<green>LoadScreenShield has been enabled! (Folia Supported)</green>"
+plugin-disabled: "<red>LoadScreenShield has been disabled!</red>"
