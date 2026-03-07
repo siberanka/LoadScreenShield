@@ -28,7 +28,7 @@
 
 # LoadScreenShield (Türkçe)
 
-**LoadScreenShield**, oyuncular sunucu kaynak paketini indirip uygularken (Resource Pack yüklenme ekranında beklerken) onları tam korumaya almak için geliştirilmiş, yüksek performanslı bir Minecraft eklेंटिसidir. **Kaynak paketinin proxy üzerinden gönderildiği sunucularda oyuncuya ItemsAdder'ın korumasına benzer bir koruma sağlar.** **Folia** ve **Paper** (1.21.x) altyapılarına %100 uyumlu olarak yazılmıştır.
+**LoadScreenShield**, oyuncular sunucu kaynak paketini indirip uygularken (Resource Pack yüklenme ekranında beklerken) onları tam korumaya almak için geliştirilmiş, yüksek performanslı bir Minecraft eklentisidir. **Kaynak paketinin proxy üzerinden gönderildiği sunucularda oyuncuya ItemsAdder'ın korumasına benzer bir koruma sağlar.** **Folia** ve **Paper** (1.21.x) altyapılarına %100 uyumlu olarak yazılmıştır.
 
 ## Özellikler ✨
 * **Tam Dokunulmazlık ve Koruması**: Kaynak paketi yükleme ekranındayken oyuncuların hasar almasını, hareket etmesini, eşya atmasını, blok koyup/kırmasını ve komut kullanmasını engeller. Tam bir geçici güvenli bölge sağlar.
