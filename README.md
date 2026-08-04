@@ -1,52 +1,90 @@
 # LoadScreenShield
 
-**LoadScreenShield** is a highly optimized, fully customizable Minecraft server plugin designed specifically to protect players while they are downloading and applying resource packs. **It provides an ItemsAdder-like protection for servers where the resource pack is sent via the proxy.** Written with native support for **Folia** and **Paper** 1.21.x architectures.
+LoadScreenShield protects Java Edition players while a server resource pack is being downloaded and applied. It is designed for Paper and Folia networks, including setups where a proxy sends the pack before the player reaches a backend server.
 
-## Features ✨
-* **Complete Invulnerability**: Prevents players from doing or receiving damage, moving, dropping items, placing/breaking blocks, interacting with inventories, and using commands while the resource pack prompt is active on their screen.
-* **100% Folia Supported**: Eliminates main-thread blocking by securely operating on Bukkit's RegionScheduler, minimizing TPS loss and crashes.
-* **PacketEvents Injection**: Uses PacketEvents 2.x API directly to send purely virtual 5x5x5 black wool/concrete boxes directly to the client to simulate a fake loading screen ("blindness box") without any real block updates.
-* **Repeating Actionbar & Title Display**: Continuously re-sends visually pleasing, prefix-less `Title` warnings every single second while the target is shielded, ensuring that even under severe client-side loading delays, the user will see the prompt securely. 
-* **Seamless Bedrock Ignore**: Auto-detects Floodgate UUIDs and ignores Geyser/Bedrock clients entirely since their resource pack delivery methods differ.
-* **Multi-Language Support**: Complete message customization supporting multiple configurable languages. Included languages are `en` and `tr`. Configuration scales safely with dynamic config reloads.
-* **Dynamic Loading Support**: Fully compatible with tools like PlugMan. Handles its connections properly without causing `NullPointerException`s when reloading.
+## What changed in 2.0
+
+- PacketEvents was removed. Fake blocks now use Paper's server-owned `BlockData` API, so Paper/ViaVersion performs protocol encoding instead of the plugin writing raw global block-state IDs.
+- Every resource-pack status available through Minecraft 26.2 is classified. Unknown future enum values fail closed and keep the shield active until the configured timeout.
+- Multiple resource packs are tracked independently; protection ends only when all observed packs are terminal.
+- Player mutations and repeating work use the entity scheduler on both Paper and Folia.
+- Floodgate remains optional and is detected without bundling or requiring its API.
+- Config and language reloads publish immutable snapshots, preserve custom keys, validate paths and bound packet/task volume.
+
+## Support matrix
+
+| Platform | Minecraft | Runtime JDK | Status | Verification |
+|---|---|---:|---|---|
+| Paper | 1.21.1–1.21.11 | 21+ | Supported | Compiled/tested against the Paper 1.21.1 API |
+| Paper | 26.1–26.2 | 25+ | Supported | Compiled/tested against Paper API `26.2.build.92-stable`; server smoke-tested on Paper 26.2 build 92 |
+| Folia | 1.21.x | 21+ | Supported | Same entity-scheduler code path; CI API compatibility |
+| Folia | 26.2 | 25+ | Supported | Server smoke-tested on Folia 26.2 build 1 (beta) |
+| Spigot/Purpur/Leaf | — | — | Not claimed | They may work when Paper APIs are present, but are not release gates |
+
+The plugin declares `api-version: 1.21`; older servers intentionally refuse to load it. Minecraft versions before 1.21 can report resource-pack status, but this repository's existing Paper/Folia 1.21 architecture and Adventure messaging establish the supported lower bound.
+
+## Installation
+
+1. Use Java 21 for Minecraft 1.21.x or Java 25 for Minecraft 26.1+.
+2. Put `LoadScreenShield-2.0.0.jar` in the server's `plugins` directory.
+3. PacketEvents is not required. Floodgate is optional.
+4. Restart the server. Avoid production hot-reload tools; a normal restart gives reliable plugin lifecycle ordering.
+
+## Resource-pack activation modes
+
+`activation-mode: JOIN` is the default and protects immediately after join. Use it when Velocity/BungeeCord or another proxy sends the pack and the backend may not see the initial request.
+
+`activation-mode: RESOURCE_PACK_STATUS` starts protection only after the backend receives `ACCEPTED`, `DOWNLOADED`, or an unknown future in-progress status. Use it when the backend sends the pack itself.
+
+Success removes the shield. Decline, download/reload failure, invalid URL, or discard removes it with a failure message. Unknown future statuses remain protected until `timeout-seconds`, preventing a new protocol state from silently bypassing protection.
+
+## Configuration
+
+```yaml
+schema-version: 2
+lang: en
+prefix: "<gray>[<gold>LoadScreenShield</gold>]</gray> "
+activation-mode: JOIN
+timeout-seconds: 120       # clamped to 5..1800
+shield-box-radius: 2       # clamped to 1..4
+shield-block-type: BLACK_WOOL
+title:
+  enabled: true
+bedrock:
+  ignore-floodgate: true
+protection:
+  enabled: true
+  cancel-movement: true
+  cancel-commands: true
+  cancel-teleports: true
+```
+
+Reload safe configuration snapshots with `/loadscreenshield reload` (`loadscreenshield.admin`). Existing custom keys are retained. Invalid language names cannot escape the plugin language directory.
+
+## Build and test
+
+Building requires Maven 3.9.6+ and JDK 25, while the produced class files target Java 21.
+
+```text
+mvn clean verify
+mvn -Ppaper-1.21 clean verify
+```
+
+The first command verifies the 26.2 upper bound; the profile verifies source compatibility with the 1.21.1 lower bound. The test suite covers every known 26.2 status, unknown future states, duplicate callbacks, and multi-pack completion.
+
+## Upgrade and rollback
+
+Version 2.0 adds missing config keys but does not delete custom keys or player/world data. Back up the plugin folder before upgrading. To roll back, stop the server, restore the previous JAR and the backed-up config, then restart. No database or world migration is performed.
 
 ---
 
-## Commands and Permissions 📜
-* `/loadscreenshield reload` (`loadscreenshield.admin`): Reloads the configuration and language configurations dynamically without requiring a server reboot.
+## Türkçe kısa rehber
 
----
+LoadScreenShield, kaynak paketi indirilip uygulanırken Java oyuncularını korur. 2.0 sürümünde ham PacketEvents blok paketleri kaldırılmıştır; blok değişikliklerini Paper doğru istemci protokolüne göre kodlar. PacketEvents artık gerekmez, Floodgate isteğe bağlıdır.
 
-## Installation ⚙️
-1. Require **PacketEvents 2.x**. Ensure that a version of PacketEvents 2.11 or newer is installed on your proxy/server as a plugin because LoadScreenShield hooks into it.
-2. Ensure you are running Java 21+ and an updated fork of Paper or Folia.
-3. Drop `LoadScreenShield-1.0.0.jar` into your `/plugins/` folder and boot your server.
-
----
----
-
-# LoadScreenShield (Türkçe)
-
-**LoadScreenShield**, oyuncular sunucu kaynak paketini indirip uygularken (Resource Pack yüklenme ekranında beklerken) onları tam korumaya almak için geliştirilmiş, yüksek performanslı bir Minecraft eklentisidir. **Kaynak paketinin proxy üzerinden gönderildiği sunucularda oyuncuya ItemsAdder'ın korumasına benzer bir koruma sağlar.** **Folia** ve **Paper** (1.21.x) altyapılarına %100 uyumlu olarak yazılmıştır.
-
-## Özellikler ✨
-* **Tam Dokunulmazlık ve Koruması**: Kaynak paketi yükleme ekranındayken oyuncuların hasar almasını, hareket etmesini, eşya atmasını, blok koyup/kırmasını ve komut kullanmasını engeller. Tam bir geçici güvenli bölge sağlar.
-* **%100 Folia Uyumluluğu**: Sunucunun ana iş parçacığını (Main Thread) asla yormaz. `RegionScheduler` kullanarak Folia'nın tps ve eşzamanlama metotlarına harfiyen uyar. Çökme (Crash) yaşanmaz.
-* **PacketEvents Teknolojisi**: Sunucuyu kastıracak gerçek blok koyma işlemleri yerine, PacketEvents API'si kullanarak oyuncunun bulunduğu alana istemci (client) tarafında gözüken sahte siyah yün kutuları gönderir. Ciddi bir optimizasyon sağlar.
-* **Sürekli Yinelenen Ekran Başlığı (Title)**: Oyuncu koruma altındayken saniyede 1 kez kendini otomatik olarak tekrarlayan başlık (Title) ve ActionBar mesajları gönderir. Böylece oyuncunun ekranı geç yüklense bile yazıları kaçırmaması ve güvenle beklemesi sağlanır. 
-* **Kusursuz Bedrock/Geyser Uyumu**: Floodgate eklentisini tanıyıp Bedrock (Telefondan) giren oyunculara işlem uygulamaz. Çünkü Bedrock oyuncularının paket indirme sistemi Java'dan tamamen farklıdır.
-* **Çoklu Dil Sistemi**: Sisteme ait tüm başlık ve mesajlar %100 ayarlanabilir formattadır. Standart olarak İngilizce (`en.yml`) ve Türkçe (`tr.yml`) dilleri entegre olarak gelir.
-* **Dinamik Yükleme (PlugMan) Desteği**: Sunucu aktifken eklentiyi yükleyip silebilirsiniz. PaketEvents dinleyicileri çökmelere (`NullPointerException`) karşı tam bir koruma ile sarmalanmıştır.
-
----
-
-## Komutlar ve Yetkiler 📜
-* `/loadscreenshield reload` (`loadscreenshield.admin`): Sunucuyu yeniden başlatmaya gereksinim duymadan `config.yml` ve dil dosyalarındaki (`lang/`) değişiklikleri anında aktif eder.
-
----
-
-## Kurulum ⚙️
-1. Sunucunuzda **PacketEvents 2.x** eklentisinin harici olarak yüklü olduğundan (v2.11+) emin olun. Eklenti optimizasyon gereği bu API'yi kullanır.
-2. Java 21+ destekleyen güncel bir Paper veya Folia sunucu motoru kullandığınızdan emin olun.
-3. `LoadScreenShield-1.0.0.jar` dosyasını `/plugins/` klasörüne atıp sunucunuzu başlatın.
+- Minecraft 1.21.1–1.21.11: Java 21+
+- Minecraft 26.1–26.2: Java 25+
+- Proxy paketi gönderiyorsa `activation-mode: JOIN` kullanın.
+- Backend paketi gönderiyorsa `activation-mode: RESOURCE_PACK_STATUS` kullanabilirsiniz.
+- Kurulumdan sonra sunucuyu normal şekilde yeniden başlatın; üretimde PlugMan benzeri sıcak yükleyiciler önerilmez.
+- Ayarları `/loadscreenshield reload` komutuyla yenileyebilirsiniz.
