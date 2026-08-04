@@ -3,19 +3,20 @@ version: '${project.version}'
 main: com.siberanka.loadscreenshield.LoadScreenShield
 api-version: '1.21'
 folia-supported: true
-description: Shield players while they load resource packs.
-author: SiberAnka
-depend: [packetevents]
+description: Protects players while server resource packs are downloaded and applied.
+author: siberanka
+website: https://github.com/siberanka/LoadScreenShield
 softdepend: [floodgate]
 
 commands:
   loadscreenshield:
-    description: Main command for LoadScreenShield
+    description: Reload LoadScreenShield configuration and language files.
     aliases: [lss]
+    usage: /<command> reload
     permission: loadscreenshield.admin
-    permission-message: "<color:#ff0000>You do not have permission to use this command.</color>"
+    permission-message: "<red>You do not have permission to use this command.</red>"
 
 permissions:
   loadscreenshield.admin:
-    description: Allows reloading the plugin config and language files.
+    description: Allows reloading the plugin configuration and language files.
     default: op

@@ -1,23 +1,30 @@
-# LoadScreenShield Main Configuration
+# LoadScreenShield configuration schema. Unknown/custom keys are preserved on reload.
+schema-version: 2
 
-# Default language file to use. (Available: en, tr)
+# Bundled values: en, tr. Custom file names may use letters, numbers, '_' and '-'.
 lang: en
-
-# Prefix for all messages. (Can use MiniMessage formats like <gray>)
 prefix: "<gray>[<gold>LoadScreenShield</gold>]</gray> "
 
-# How many seconds after joining should the shield expire if resource pack isn't accepted/rejected?
+# JOIN protects immediately and is recommended when a proxy sends the pack.
+# RESOURCE_PACK_STATUS begins protection when ACCEPTED/DOWNLOADED is reported.
+activation-mode: JOIN
+
+# Safety bounds: 5-1800 seconds. Unknown future statuses remain protected until this timeout.
 timeout-seconds: 120
 
-# Which block type should be used for the dark box shielding the player?
+# Client-only overlay. Safety bounds: radius 1-4 (27-729 block states before world-height clipping).
+shield-box-radius: 2
 shield-block-type: BLACK_WOOL
 
-# Title settings
 title:
   enabled: true
 
-# Protection settings (enable/disable specific restrictions)
+bedrock:
+  # Floodgate is optional and linked without bundling its API.
+  ignore-floodgate: true
+
 protection:
   enabled: true
   cancel-movement: true
   cancel-commands: true
+  cancel-teleports: true

@@ -1,4 +1,7 @@
 reload-success: "<green>Plugin configuration and language files reloaded successfully.</green>"
+reload-in-progress: "<yellow>A configuration reload is already in progress.</yellow>"
+reload-failed: "<red>Configuration reload failed. Check the server log.</red>"
+command-usage: "<yellow>Usage: /loadscreenshield reload</yellow>"
 no-permission: "<red>You don't have permission to do this.</red>"
 shield-activated: "<yellow>Resource pack loading. You are shielded and cannot move.</yellow>"
 shield-deactivated: "<green>Resource pack loaded. Shield removed, you can move now!</green>"

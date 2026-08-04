@@ -1,203 +1,297 @@
 package com.siberanka.loadscreenshield.manager;
 
+import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.title.Title;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
-import org.bukkit.Material;
+import org.bukkit.World;
 import org.bukkit.block.data.BlockData;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 
-import com.github.retrooper.packetevents.PacketEvents;
-import com.github.retrooper.packetevents.protocol.world.states.WrappedBlockState;
-import com.github.retrooper.packetevents.protocol.world.states.type.StateType;
-import com.github.retrooper.packetevents.protocol.world.states.type.StateTypes;
-import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerBlockChange;
-import com.github.retrooper.packetevents.util.Vector3i;
-
-import java.util.Set;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.logging.Level;
 
-public class ShieldManager {
+public final class ShieldManager {
+
+    private static final int BLINDNESS_REFRESH_TICKS = 60;
+    private static final Title.Times TITLE_TIMES = Title.Times.times(
+            Duration.ZERO, Duration.ofSeconds(2), Duration.ZERO
+    );
 
     private final JavaPlugin plugin;
     private final ConfigManager configManager;
     private final LangManager langManager;
-
-    // Players currently shielded
-    private final Set<UUID> currentlyShielded = ConcurrentHashMap.newKeySet();
-
-    private final boolean isFolia;
+    private final FloodgateAdapter floodgate;
+    private final ConcurrentMap<UUID, ShieldSession> sessions = new ConcurrentHashMap<>();
 
     public ShieldManager(JavaPlugin plugin, ConfigManager configManager, LangManager langManager) {
         this.plugin = plugin;
         this.configManager = configManager;
         this.langManager = langManager;
-
-        boolean folia = false;
-        try {
-            Class.forName("io.papermc.paper.threadedregions.RegionizedServer");
-            folia = true;
-        } catch (ClassNotFoundException ignored) {
-        }
-        this.isFolia = folia;
+        this.floodgate = FloodgateAdapter.discover(plugin);
     }
 
-    public void activateShield(Player player) {
-
-        // Floodgate Check: Bedrock players do not download Java resource packs the same
-        // way
-        if (Bukkit.getPluginManager().isPluginEnabled("floodgate")) {
-            if (org.geysermc.floodgate.api.FloodgateApi.getInstance().isFloodgateId(player.getUniqueId())) {
-                return;
-            }
+    public void handleJoin(Player player) {
+        ConfigManager.Snapshot config = configManager.snapshot();
+        if (!config.protectionEnabled() || config.activationMode() != ConfigManager.ActivationMode.JOIN) {
+            return;
         }
-
-        currentlyShielded.add(player.getUniqueId());
-
-        Component msg = langManager.getMessage("shield-activated");
-        player.sendMessage(msg);
-
-        if (configManager.getBoolean("title.enabled", true)) {
-            // Repeat the title every second (handled by scheduleRepeatingTaskTask)
-            scheduleRepeatingTaskTask(player.getLocation(), () -> {
-                if (player.isOnline() && isShielded(player)) {
-                    Component titleMain = langManager.getRawMessage("title-main");
-                    Component titleSub = langManager.getRawMessage("title-sub");
-                    player.showTitle(net.kyori.adventure.title.Title.title(titleMain, titleSub));
-                }
-            });
-        }
-
-        // Apply blindness and fake blocks
-        player.addPotionEffect(new PotionEffect(PotionEffectType.BLINDNESS, 20 * 60 * 10, 10, false, false, false));
-
-        sendFakeBox(player);
-
-        // Schedule timeout
-        long timeoutSeconds = configManager.getInt("timeout-seconds");
-        if (timeoutSeconds <= 0)
-            timeoutSeconds = 120;
-
-        scheduleDelayedTask(player.getLocation(), () -> {
-            Player p = Bukkit.getPlayer(player.getUniqueId());
-            if (p != null && isShielded(p)) {
-                deactivateShield(p, langManager.getMessage("shield-timeout"));
-            }
-        }, timeoutSeconds * 20L);
+        player.getScheduler().runDelayed(plugin, task -> activateShield(player, true), null, 1L);
     }
 
-    public void deactivateShield(Player player, Component reasonMessage) {
-        if (!currentlyShielded.contains(player.getUniqueId())) {
+    public void handleResourcePackStatus(Player player, UUID packId, String statusName) {
+        ResourcePackStatusPolicy.Outcome outcome = ResourcePackStatusPolicy.classify(statusName);
+        ShieldSession session = sessions.get(player.getUniqueId());
+
+        if ((outcome == ResourcePackStatusPolicy.Outcome.WAITING
+                || outcome == ResourcePackStatusPolicy.Outcome.UNKNOWN) && session == null) {
+            session = activateShield(player, false);
+        }
+        if (session == null) {
             return;
         }
 
-        currentlyShielded.remove(player.getUniqueId());
+        boolean terminal = session.packTracker().record(packId, outcome);
+        if (!terminal) {
+            return;
+        }
 
+        if (outcome == ResourcePackStatusPolicy.Outcome.SUCCESS) {
+            deactivateShield(player, langManager.getMessage("shield-deactivated"));
+        } else {
+            String messageKey = "DECLINED".equalsIgnoreCase(statusName) ? "shield-declined" : "shield-failed";
+            deactivateShield(player, langManager.getMessage(messageKey));
+        }
+    }
+
+    private ShieldSession activateShield(Player player, boolean waitingForInitialStatus) {
+        ConfigManager.Snapshot config = configManager.snapshot();
+        if (!config.protectionEnabled() || !player.isOnline()) {
+            return null;
+        }
+        if (config.ignoreFloodgatePlayers() && floodgate.isFloodgatePlayer(player.getUniqueId())) {
+            return null;
+        }
+
+        ShieldSession existing = sessions.get(player.getUniqueId());
+        if (existing != null) {
+            return existing;
+        }
+
+        List<Location> overlayLocations = createOverlayLocations(player, config.boxRadius());
+        ShieldSession created = new ShieldSession(
+                new ResourcePackTracker(waitingForInitialStatus), overlayLocations
+        );
+        ShieldSession raced = sessions.putIfAbsent(player.getUniqueId(), created);
+        if (raced != null) {
+            return raced;
+        }
+
+        player.sendMessage(langManager.getMessage("shield-activated"));
+        refreshVisuals(player, created, config);
+        sendFakeBox(player, created.overlayLocations(), config.shieldMaterial().createBlockData());
+
+        ScheduledTask repeatingTask = player.getScheduler().runAtFixedRate(plugin, task -> {
+            ShieldSession current = sessions.get(player.getUniqueId());
+            if (current != created || !player.isOnline()) {
+                task.cancel();
+                return;
+            }
+            refreshVisuals(player, created, configManager.snapshot());
+        }, () -> sessions.remove(player.getUniqueId(), created), 20L, 20L);
+        created.setRepeatingTask(repeatingTask);
+
+        ScheduledTask timeoutTask = player.getScheduler().runDelayed(plugin, task -> {
+            if (sessions.get(player.getUniqueId()) == created) {
+                deactivateShield(player, langManager.getMessage("shield-timeout"));
+            }
+        }, () -> sessions.remove(player.getUniqueId(), created), config.timeoutSeconds() * 20L);
+        created.setTimeoutTask(timeoutTask);
+        if (sessions.get(player.getUniqueId()) != created) {
+            created.cancelTasks();
+        }
+        return created;
+    }
+
+    private void refreshVisuals(Player player, ShieldSession session, ConfigManager.Snapshot config) {
+        if (sessions.get(player.getUniqueId()) != session) {
+            return;
+        }
+        player.addPotionEffect(new PotionEffect(
+                PotionEffectType.BLINDNESS, BLINDNESS_REFRESH_TICKS, 1, false, false, false
+        ));
+        if (config.titleEnabled()) {
+            player.showTitle(Title.title(
+                    langManager.getRawMessage("title-main"),
+                    langManager.getRawMessage("title-sub"),
+                    TITLE_TIMES
+            ));
+        }
+    }
+
+    public void deactivateShield(Player player, Component reasonMessage) {
+        ShieldSession session = sessions.remove(player.getUniqueId());
+        if (session == null) {
+            return;
+        }
+        session.cancelTasks();
+        player.clearTitle();
+        player.removePotionEffect(PotionEffectType.BLINDNESS);
+        restoreFakeBox(player, session.overlayLocations());
         if (reasonMessage != null) {
             player.sendMessage(reasonMessage);
         }
-
-        player.clearTitle();
-
-        player.clearTitle();
-
-        player.removePotionEffect(PotionEffectType.BLINDNESS);
-
-        // Remove fake blocks by sending real blocks
-        removeFakeBox(player);
     }
 
-    private void sendFakeBox(Player player) {
-        String blockTypeStr = configManager.getString("shield-block-type");
-        Material mat = Material.BLACK_WOOL;
-        if (blockTypeStr != null) {
-            try {
-                mat = Material.valueOf(blockTypeStr.toUpperCase());
-            } catch (IllegalArgumentException ignored) {
-            }
-        }
-
-        StateType stateType = StateTypes.getByName("minecraft:" + mat.name().toLowerCase());
-        if (stateType == null)
-            stateType = StateTypes.BLACK_WOOL;
-
-        WrappedBlockState wrappedState = stateType.createBlockState();
+    private List<Location> createOverlayLocations(Player player, int radius) {
         Location center = player.getLocation().getBlock().getLocation();
-
-        // Send 5x5x5 block packets
-        for (int x = -2; x <= 2; x++) {
-            for (int y = -2; y <= 2; y++) {
-                for (int z = -2; z <= 2; z++) {
-                    Vector3i pos = new Vector3i(center.getBlockX() + x, center.getBlockY() + y, center.getBlockZ() + z);
-                    WrapperPlayServerBlockChange packet = new WrapperPlayServerBlockChange(pos,
-                            wrappedState.getGlobalId());
-                    PacketEvents.getAPI().getPlayerManager().sendPacket(player, packet);
+        World world = center.getWorld();
+        int minimumY = world.getMinHeight();
+        int maximumY = world.getMaxHeight() - 1;
+        List<Location> locations = new ArrayList<>((radius * 2 + 1) * (radius * 2 + 1) * (radius * 2 + 1));
+        for (int x = -radius; x <= radius; x++) {
+            for (int y = -radius; y <= radius; y++) {
+                int blockY = center.getBlockY() + y;
+                if (blockY < minimumY || blockY > maximumY) {
+                    continue;
+                }
+                for (int z = -radius; z <= radius; z++) {
+                    locations.add(new Location(
+                            world,
+                            center.getBlockX() + x,
+                            blockY,
+                            center.getBlockZ() + z
+                    ));
                 }
             }
         }
+        return List.copyOf(locations);
     }
 
-    private void removeFakeBox(Player player) {
-        Location center = player.getLocation().getBlock().getLocation();
-        // Send real blocks back to the client using PacketEvents
-        for (int x = -2; x <= 2; x++) {
-            for (int y = -2; y <= 2; y++) {
-                for (int z = -2; z <= 2; z++) {
-                    Location loc = center.clone().add(x, y, z);
+    private void sendFakeBox(Player player, List<Location> locations, BlockData fakeBlock) {
+        try {
+            // Paper and any protocol translator encode these server-owned states for the client version.
+            for (Location location : locations) {
+                player.sendBlockChange(location, fakeBlock);
+            }
+        } catch (RuntimeException exception) {
+            plugin.getLogger().log(Level.WARNING,
+                    "Could not send the client-side shield blocks to " + player.getName()
+                            + "; blindness and event protection remain active.", exception);
+        }
+    }
 
-                    com.github.retrooper.packetevents.protocol.world.states.type.StateType stateType = com.github.retrooper.packetevents.protocol.world.states.type.StateTypes
-                            .getByName("minecraft:" + loc.getBlock().getType().name().toLowerCase());
-
-                    if (stateType == null)
-                        stateType = com.github.retrooper.packetevents.protocol.world.states.type.StateTypes.AIR;
-
-                    WrappedBlockState wrappedState = stateType.createBlockState();
-
-                    Vector3i pos = new Vector3i(loc.getBlockX(), loc.getBlockY(), loc.getBlockZ());
-                    WrapperPlayServerBlockChange packet = new WrapperPlayServerBlockChange(pos,
-                            wrappedState.getGlobalId());
-                    PacketEvents.getAPI().getPlayerManager().sendPacket(player, packet);
+    private void restoreFakeBox(Player player, List<Location> locations) {
+        World playerWorld = player.getWorld();
+        try {
+            for (Location location : locations) {
+                if (location.getWorld() == playerWorld) {
+                    player.sendBlockChange(location, location.getBlock().getBlockData());
                 }
             }
+        } catch (RuntimeException exception) {
+            plugin.getLogger().log(Level.FINE,
+                    "The client-side shield blocks could not be restored for " + player.getName(), exception);
         }
     }
 
     public boolean isShielded(Player player) {
-        return currentlyShielded.contains(player.getUniqueId());
+        return sessions.containsKey(player.getUniqueId());
     }
 
     public void cleanupPlayer(Player player) {
-        if (currentlyShielded.remove(player.getUniqueId())) {
-            player.removePotionEffect(PotionEffectType.BLINDNESS);
-            player.clearTitle();
+        ShieldSession session = sessions.remove(player.getUniqueId());
+        if (session != null) {
+            session.cancelTasks();
         }
     }
 
     public void cleanupAll() {
-        currentlyShielded.clear();
-    }
-
-    private void scheduleDelayedTask(Location loc, Runnable task, long delayTicks) {
-        if (isFolia) {
-            Bukkit.getRegionScheduler().runDelayed(plugin, loc, t -> task.run(), delayTicks);
-        } else {
-            Bukkit.getScheduler().runTaskLater(plugin, task, delayTicks);
+        for (Map.Entry<UUID, ShieldSession> entry : List.copyOf(sessions.entrySet())) {
+            Player player = Bukkit.getPlayer(entry.getKey());
+            ShieldSession session = entry.getValue();
+            session.cancelTasks();
+            if (player == null || !player.isOnline()) {
+                sessions.remove(entry.getKey(), session);
+                continue;
+            }
+            try {
+                player.getScheduler().execute(plugin, () -> {
+                    if (sessions.remove(entry.getKey(), session)) {
+                        player.clearTitle();
+                        player.removePotionEffect(PotionEffectType.BLINDNESS);
+                        restoreFakeBox(player, session.overlayLocations());
+                    }
+                }, () -> sessions.remove(entry.getKey(), session), 1L);
+            } catch (IllegalStateException ignored) {
+                // The scheduler can reject new work after disable begins. Short blindness expires naturally.
+                sessions.remove(entry.getKey(), session);
+            }
         }
     }
 
-    private void scheduleRepeatingTaskTask(Location loc, Runnable task) {
-        if (isFolia) {
-            Bukkit.getRegionScheduler().runAtFixedRate(plugin, loc, t -> {
-                task.run();
-                if (!t.getOwningPlugin().isEnabled() || t.isCancelled())
-                    t.cancel();
-            }, 1L, 20L); // 1 tick delay, 20 tick period
-        } else {
-            Bukkit.getScheduler().runTaskTimerAsynchronously(plugin, task, 1L, 20L);
+    public void applyConfiguration() {
+        if (!configManager.snapshot().protectionEnabled()) {
+            for (UUID playerId : List.copyOf(sessions.keySet())) {
+                Player player = Bukkit.getPlayer(playerId);
+                if (player != null) {
+                    player.getScheduler().execute(plugin,
+                            () -> deactivateShield(player, null),
+                            () -> sessions.remove(playerId),
+                            1L);
+                } else {
+                    sessions.remove(playerId);
+                }
+            }
+        }
+    }
+
+    private static final class ShieldSession {
+        private final ResourcePackTracker packTracker;
+        private final List<Location> overlayLocations;
+        private volatile ScheduledTask repeatingTask;
+        private volatile ScheduledTask timeoutTask;
+
+        private ShieldSession(ResourcePackTracker packTracker, List<Location> overlayLocations) {
+            this.packTracker = packTracker;
+            this.overlayLocations = overlayLocations;
+        }
+
+        private ResourcePackTracker packTracker() {
+            return packTracker;
+        }
+
+        private List<Location> overlayLocations() {
+            return overlayLocations;
+        }
+
+        private void setRepeatingTask(ScheduledTask repeatingTask) {
+            this.repeatingTask = repeatingTask;
+        }
+
+        private void setTimeoutTask(ScheduledTask timeoutTask) {
+            this.timeoutTask = timeoutTask;
+        }
+
+        private void cancelTasks() {
+            ScheduledTask repeating = repeatingTask;
+            if (repeating != null) {
+                repeating.cancel();
+            }
+            ScheduledTask timeout = timeoutTask;
+            if (timeout != null) {
+                timeout.cancel();
+            }
         }
     }
 }

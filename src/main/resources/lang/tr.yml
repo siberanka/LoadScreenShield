@@ -1,4 +1,7 @@
 reload-success: "<green>Eklenti yapılandırması ve dil dosyaları başarıyla yeniden yüklendi.</green>"
+reload-in-progress: "<yellow>Bir yapılandırma yenilemesi zaten devam ediyor.</yellow>"
+reload-failed: "<red>Yapılandırma yenilenemedi. Sunucu kaydını kontrol edin.</red>"
+command-usage: "<yellow>Kullanım: /loadscreenshield reload</yellow>"
 no-permission: "<red>Bunu yapmak için izniniz yok.</red>"
 shield-activated: "<yellow>Kaynak paketi yükleniyor. Koruma altındasınız ve hareket edemezsiniz.</yellow>"
 shield-deactivated: "<green>Kaynak paketi yüklendi. Koruma kaldırıldı, artık hareket edebilirsiniz!</green>"
