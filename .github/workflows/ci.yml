@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [paper-26.2, paper-1.21]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+      - name: Verify against Paper 26.2
+        if: matrix.api == 'paper-26.2'
+        run: mvn --batch-mode --update-snapshots clean verify
+      - name: Verify against Paper 1.21.1 API
+        if: matrix.api == 'paper-1.21'
+        run: mvn --batch-mode --update-snapshots -Ppaper-1.21 clean verify
+      - name: Upload plugin artifact
+        if: matrix.api == 'paper-26.2'
+        uses: actions/upload-artifact@v4
+        with:
+          name: LoadScreenShield-${{ github.sha }}
+          path: target/LoadScreenShield-*.jar
+          if-no-files-found: error
