@@ -8,6 +8,7 @@ import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.block.data.BlockData;
 import org.bukkit.entity.Player;
+import org.bukkit.event.player.PlayerResourcePackStatusEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
@@ -46,7 +47,16 @@ public final class ShieldManager {
         if (!config.protectionEnabled() || config.activationMode() != ConfigManager.ActivationMode.JOIN) {
             return;
         }
-        player.getScheduler().runDelayed(plugin, task -> activateShield(player, true), null, 1L);
+        player.getScheduler().runDelayed(plugin, task -> activateJoinShield(player), null, 1L);
+    }
+
+    private void activateJoinShield(Player player) {
+        PlayerResourcePackStatusEvent.Status latestStatus = player.getResourcePackStatus();
+        String statusName = latestStatus == null ? null : latestStatus.name();
+        if (!ResourcePackStatusPolicy.shouldActivateJoinShield(statusName)) {
+            return;
+        }
+        activateShield(player, true);
     }
 
     public void handleResourcePackStatus(Player player, UUID packId, String statusName) {

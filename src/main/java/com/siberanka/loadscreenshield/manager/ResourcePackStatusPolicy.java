@@ -34,6 +34,15 @@ public final class ResourcePackStatusPolicy {
         return Outcome.UNKNOWN;
     }
 
+    /**
+     * A cached pack can complete before the delayed JOIN shield task runs. A
+     * terminal client status means there is no loading window left to protect.
+     */
+    public static boolean shouldActivateJoinShield(String latestStatusName) {
+        Outcome outcome = classify(latestStatusName);
+        return outcome != Outcome.SUCCESS && outcome != Outcome.FAILURE;
+    }
+
     public enum Outcome {
         WAITING,
         SUCCESS,

@@ -3,6 +3,8 @@ package com.siberanka.loadscreenshield.manager;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ResourcePackStatusPolicyTest {
 
@@ -32,5 +34,15 @@ class ResourcePackStatusPolicyTest {
                 ResourcePackStatusPolicy.classify("FUTURE_CLIENT_STAGE"));
         assertEquals(ResourcePackStatusPolicy.Outcome.UNKNOWN,
                 ResourcePackStatusPolicy.classify(null));
+    }
+
+    @Test
+    void cachedTerminalStatusPreventsLateJoinShieldActivation() {
+        assertFalse(ResourcePackStatusPolicy.shouldActivateJoinShield("SUCCESSFULLY_LOADED"));
+        assertFalse(ResourcePackStatusPolicy.shouldActivateJoinShield("DECLINED"));
+        assertFalse(ResourcePackStatusPolicy.shouldActivateJoinShield("FAILED_RELOAD"));
+        assertTrue(ResourcePackStatusPolicy.shouldActivateJoinShield("ACCEPTED"));
+        assertTrue(ResourcePackStatusPolicy.shouldActivateJoinShield("FUTURE_CLIENT_STAGE"));
+        assertTrue(ResourcePackStatusPolicy.shouldActivateJoinShield(null));
     }
 }
