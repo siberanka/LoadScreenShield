@@ -7,17 +7,23 @@ import org.bukkit.plugin.java.JavaPlugin;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.regex.Pattern;
 
 public final class ConfigManager {
 
     private static final Pattern SAFE_LANGUAGE = Pattern.compile("[A-Za-z0-9_-]{1,32}");
+    private static final int CURRENT_SCHEMA_VERSION = 3;
     private static final int MIN_TIMEOUT_SECONDS = 5;
     private static final int MAX_TIMEOUT_SECONDS = 1800;
     private static final int MAX_BOX_RADIUS = 4;
+    private static final int MAX_PREFIX_LENGTH = 1024;
 
     private final JavaPlugin plugin;
     private final File configFile;
@@ -29,99 +35,225 @@ public final class ConfigManager {
     }
 
     public synchronized void loadConfig() {
+        boolean existedBeforeLoad = configFile.isFile();
         if (!configFile.exists()) {
             plugin.saveResource("config.yml", false);
         }
 
-        YamlConfiguration loaded = YamlConfiguration.loadConfiguration(configFile);
-        boolean needsSave = mergeMissingDefaults(loaded);
-        int schemaVersion = loaded.getInt("schema-version", 1);
-        if (schemaVersion < 2) {
-            loaded.set("schema-version", 2);
-            needsSave = true;
-        } else if (schemaVersion > 2) {
-            plugin.getLogger().warning("config.yml uses newer schema-version " + schemaVersion
-                    + "; unknown keys will be preserved, but downgrade compatibility is not guaranteed.");
-        }
+        try {
+            String templateText = readBundledConfig();
+            YamlConfiguration template = ConfigDocument.parseTemplate(templateText);
+            ConfigDocument document = ConfigDocument.load(configFile.toPath(), existedBeforeLoad);
+            YamlConfiguration loaded = document.configuration();
 
-        String language = loaded.getString("lang", "en");
+            if (document.loadProblem() != null) {
+                plugin.getLogger().warning(document.loadProblem() + "; restoring safe documented defaults.");
+            }
+
+            ensureSupportedSchema(loaded, plugin.getLogger()::warning);
+
+            Set<String> unknownKeys = document.unknownKeys(template);
+            Set<String> missingKeys = document.missingKeys(template);
+            if (!unknownKeys.isEmpty()) {
+                plugin.getLogger().warning("Removing unknown config.yml entries after backup: "
+                        + summarizeKeys(unknownKeys));
+            }
+            if (!missingKeys.isEmpty()) {
+                plugin.getLogger().info("Adding missing documented config.yml entries: "
+                        + summarizeKeys(missingKeys));
+            }
+
+            Snapshot validated = validate(loaded, plugin.getLogger()::warning);
+            ConfigDocument.RewriteResult rewrite = document.rewriteCanonical(
+                    templateText,
+                    canonicalValues(validated)
+            );
+            if (rewrite.backup() != null) {
+                plugin.getLogger().warning("Backed up the previous config.yml to "
+                        + rewrite.backup().getFileName());
+            }
+            if (rewrite.changed()) {
+                plugin.getLogger().info("Normalized config.yml to schema " + CURRENT_SCHEMA_VERSION
+                        + " with documented settings in canonical order.");
+            }
+            snapshot = validated;
+        } catch (IOException exception) {
+            throw new IllegalStateException("Could not safely normalize config.yml", exception);
+        }
+    }
+
+    private String readBundledConfig() throws IOException {
+        try (InputStream stream = plugin.getResource("config.yml")) {
+            if (stream == null) {
+                throw new IOException("Bundled config.yml is missing from the plugin JAR");
+            }
+            return new String(stream.readAllBytes(), StandardCharsets.UTF_8);
+        }
+    }
+
+    private static String summarizeKeys(Set<String> keys) {
+        int limit = 12;
+        String summary = keys.stream().limit(limit).reduce((left, right) -> left + ", " + right).orElse("");
+        if (keys.size() > limit) {
+            summary += " (and " + (keys.size() - limit) + " more)";
+        }
+        return summary;
+    }
+
+    static void ensureSupportedSchema(YamlConfiguration loaded, Consumer<String> warning) {
+        int schemaVersion = strictInt(loaded, "schema-version", 1, warning);
+        if (schemaVersion > CURRENT_SCHEMA_VERSION) {
+            throw new IllegalStateException("config.yml uses newer schema-version " + schemaVersion
+                    + "; this plugin supports up to " + CURRENT_SCHEMA_VERSION
+                    + ". Downgrade was stopped to avoid deleting future settings.");
+        }
+    }
+
+    static Snapshot validate(YamlConfiguration loaded, Consumer<String> warning) {
+        return validate(loaded, warning, ConfigManager::resolveBlockMaterial);
+    }
+
+    static Snapshot validate(
+            YamlConfiguration loaded,
+            Consumer<String> warning,
+            Function<String, Material> blockMaterialResolver
+    ) {
+        String language = strictString(loaded, "lang", "en", MAX_PREFIX_LENGTH, warning).trim();
         if (!SAFE_LANGUAGE.matcher(language).matches()) {
-            plugin.getLogger().warning("Invalid lang value; using en. Only letters, numbers, '_' and '-' are allowed.");
+            warning.accept("Invalid lang value; using en. Only letters, numbers, '_' and '-' are allowed.");
             language = "en";
         }
 
+        String prefix = strictString(loaded, "prefix", "", MAX_PREFIX_LENGTH, warning);
         int timeoutSeconds = clamp(
-                loaded.getInt("timeout-seconds", 120),
+                strictInt(loaded, "timeout-seconds", 120, warning),
                 MIN_TIMEOUT_SECONDS,
                 MAX_TIMEOUT_SECONDS,
-                "timeout-seconds"
+                "timeout-seconds",
+                warning
         );
-        int boxRadius = clamp(loaded.getInt("shield-box-radius", 2), 1, MAX_BOX_RADIUS, "shield-box-radius");
+        int boxRadius = clamp(
+                strictInt(loaded, "shield-box-radius", 2, warning),
+                1,
+                MAX_BOX_RADIUS,
+                "shield-box-radius",
+                warning
+        );
 
-        String materialName = loaded.getString("shield-block-type", "BLACK_WOOL");
-        Material shieldMaterial = materialName == null
-                ? null
-                : Material.matchMaterial(materialName.toUpperCase(Locale.ROOT));
-        if (shieldMaterial == null || !shieldMaterial.isBlock()) {
-            plugin.getLogger().warning("Invalid shield-block-type '" + materialName + "'; using BLACK_WOOL.");
+        String materialName = strictString(
+                loaded, "shield-block-type", "BLACK_WOOL", 64, warning
+        ).trim();
+        Material shieldMaterial = blockMaterialResolver.apply(materialName.toUpperCase(Locale.ROOT));
+        if (shieldMaterial == null) {
+            warning.accept("Invalid shield-block-type '" + materialName + "'; using BLACK_WOOL.");
             shieldMaterial = Material.BLACK_WOOL;
         }
 
         ActivationMode activationMode = ActivationMode.parse(
-                loaded.getString("activation-mode", ActivationMode.JOIN.name()),
-                plugin
+                strictString(loaded, "activation-mode", ActivationMode.JOIN.name(), 64, warning),
+                warning
         );
 
-        snapshot = new Snapshot(
+        return new Snapshot(
                 language,
-                loaded.getString("prefix", ""),
+                prefix,
                 timeoutSeconds,
                 boxRadius,
                 shieldMaterial,
                 activationMode,
-                loaded.getBoolean("title.enabled", true),
-                loaded.getBoolean("protection.enabled", true),
-                loaded.getBoolean("protection.cancel-movement", true),
-                loaded.getBoolean("protection.cancel-commands", true),
-                loaded.getBoolean("protection.cancel-teleports", true),
-                loaded.getBoolean("bedrock.ignore-floodgate", true)
+                strictBoolean(loaded, "title.enabled", true, warning),
+                strictBoolean(loaded, "protection.enabled", true, warning),
+                strictBoolean(loaded, "protection.cancel-movement", true, warning),
+                strictBoolean(loaded, "protection.cancel-commands", true, warning),
+                strictBoolean(loaded, "protection.cancel-teleports", true, warning),
+                strictBoolean(loaded, "bedrock.ignore-floodgate", true, warning)
         );
-
-        if (needsSave) {
-            try {
-                loaded.save(configFile);
-            } catch (IOException exception) {
-                plugin.getLogger().log(java.util.logging.Level.SEVERE, "Could not save updated config.yml", exception);
-            }
-        }
     }
 
-    private boolean mergeMissingDefaults(YamlConfiguration loaded) {
-        try (InputStream stream = plugin.getResource("config.yml")) {
-            if (stream == null) {
-                return false;
-            }
-            YamlConfiguration defaults = YamlConfiguration.loadConfiguration(
-                    new InputStreamReader(stream, StandardCharsets.UTF_8)
-            );
-            boolean changed = false;
-            for (String key : defaults.getKeys(true)) {
-                if (!loaded.contains(key)) {
-                    loaded.set(key, defaults.get(key));
-                    changed = true;
-                }
-            }
-            return changed;
-        } catch (IOException exception) {
-            plugin.getLogger().log(java.util.logging.Level.WARNING, "Could not read the default config", exception);
-            return false;
-        }
+    private static Material resolveBlockMaterial(String materialName) {
+        Material material = Material.matchMaterial(materialName);
+        return material != null && material.isBlock() ? material : null;
     }
 
-    private int clamp(int value, int minimum, int maximum, String path) {
+    static Map<String, Object> canonicalValues(Snapshot value) {
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("schema-version", CURRENT_SCHEMA_VERSION);
+        values.put("lang", value.language());
+        values.put("prefix", value.prefix());
+        values.put("activation-mode", value.activationMode().name());
+        values.put("timeout-seconds", value.timeoutSeconds());
+        values.put("shield-box-radius", value.boxRadius());
+        values.put("shield-block-type", value.shieldMaterial().name());
+        values.put("title.enabled", value.titleEnabled());
+        values.put("bedrock.ignore-floodgate", value.ignoreFloodgatePlayers());
+        values.put("protection.enabled", value.protectionEnabled());
+        values.put("protection.cancel-movement", value.cancelMovement());
+        values.put("protection.cancel-commands", value.cancelCommands());
+        values.put("protection.cancel-teleports", value.cancelTeleports());
+        return Map.copyOf(values);
+    }
+
+    private static String strictString(
+            YamlConfiguration loaded,
+            String path,
+            String fallback,
+            int maximumLength,
+            Consumer<String> warning
+    ) {
+        if (!loaded.isString(path)) {
+            if (loaded.contains(path)) {
+                warning.accept(path + " must be a string; using the documented default.");
+            }
+            return fallback;
+        }
+        String value = loaded.getString(path, fallback);
+        if (value.length() > maximumLength) {
+            warning.accept(path + " exceeds " + maximumLength + " characters; using the documented default.");
+            return fallback;
+        }
+        return value;
+    }
+
+    private static int strictInt(
+            YamlConfiguration loaded,
+            String path,
+            int fallback,
+            Consumer<String> warning
+    ) {
+        if (!loaded.isInt(path)) {
+            if (loaded.contains(path)) {
+                warning.accept(path + " must be an integer; using " + fallback + '.');
+            }
+            return fallback;
+        }
+        return loaded.getInt(path);
+    }
+
+    private static boolean strictBoolean(
+            YamlConfiguration loaded,
+            String path,
+            boolean fallback,
+            Consumer<String> warning
+    ) {
+        if (!loaded.isBoolean(path)) {
+            if (loaded.contains(path)) {
+                warning.accept(path + " must be true or false; using " + fallback + '.');
+            }
+            return fallback;
+        }
+        return loaded.getBoolean(path);
+    }
+
+    private static int clamp(
+            int value,
+            int minimum,
+            int maximum,
+            String path,
+            Consumer<String> warning
+    ) {
         int clamped = Math.max(minimum, Math.min(maximum, value));
         if (clamped != value) {
-            plugin.getLogger().warning(path + " must be between " + minimum + " and " + maximum
+            warning.accept(path + " must be between " + minimum + " and " + maximum
                     + "; using " + clamped + '.');
         }
         return clamped;
@@ -135,7 +267,7 @@ public final class ConfigManager {
         JOIN,
         RESOURCE_PACK_STATUS;
 
-        private static ActivationMode parse(String value, JavaPlugin plugin) {
+        private static ActivationMode parse(String value, Consumer<String> warning) {
             if (value != null) {
                 try {
                     return valueOf(value.trim().toUpperCase(Locale.ROOT));
@@ -143,7 +275,7 @@ public final class ConfigManager {
                     // The warning below explains the safe fallback.
                 }
             }
-            plugin.getLogger().warning("Invalid activation-mode; using JOIN.");
+            warning.accept("Invalid activation-mode; using JOIN.");
             return JOIN;
         }
     }

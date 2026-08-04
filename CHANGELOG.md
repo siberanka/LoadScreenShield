@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.0.1 - 2026-08-04
+
+### Correctness
+
+- Prevent cached/local packs that finish before the delayed `JOIN` activation task from entering a stale shield session and timing out.
+- Read Paper's latest per-player resource-pack status before activating the delayed join shield.
+
+### Configuration
+
+- Migrate `config.yml` to schema 3 and rebuild it in the documented canonical order.
+- Add missing settings, repair invalid known values, and remove unknown settings only after backing up the original file.
+- Preserve malformed config files before restoring safe defaults; reject newer schemas without destructive downgrade.
+- Use atomic replacement, content-addressed backup deduplication, a 1 MiB input bound, synchronized reloads, and a maximum of 10 automatic config backups.
+- Document every setting, valid enum/boolean choice, numeric bound, and operational use directly in `config.yml`.
+
+### Verification
+
+- Add regression coverage for the cached-pack event race, schema migration, malformed YAML, canonical comments/order, idempotent rewrites, backup deduplication, and bounded backup retention.
+
 ## 2.0.0 - 2026-08-04
 
 ### Security and correctness

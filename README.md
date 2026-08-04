@@ -2,6 +2,13 @@
 
 LoadScreenShield protects Java Edition players while a server resource pack is being downloaded and applied. It is designed for Paper and Folia networks, including setups where a proxy sends the pack before the player reaches a backend server.
 
+## What changed in 2.0.1
+
+- Cached/local resource packs that report a terminal status before the delayed `JOIN` task no longer create a shield that waits until timeout.
+- `config.yml` is normalized to the documented schema: missing settings are inserted in canonical order, invalid values are repaired, and unknown entries are removed after backup.
+- Config rewrites use a synchronized, size-bounded, atomic replacement path. Identical bad input reuses its content-addressed backup and automatic backups are capped at 10.
+- Every available setting and accepted value is documented inline in the generated `config.yml`.
+
 ## What changed in 2.0
 
 - PacketEvents was removed. Fake blocks now use Paper's server-owned `BlockData` API, so Paper/ViaVersion performs protocol encoding instead of the plugin writing raw global block-state IDs.
@@ -9,7 +16,7 @@ LoadScreenShield protects Java Edition players while a server resource pack is b
 - Multiple resource packs are tracked independently; protection ends only when all observed packs are terminal.
 - Player mutations and repeating work use the entity scheduler on both Paper and Folia.
 - Floodgate remains optional and is detected without bundling or requiring its API.
-- Config and language reloads publish immutable snapshots, preserve custom keys, validate paths and bound packet/task volume.
+- Config and language reloads publish immutable snapshots, validate paths and bound packet/task volume.
 
 ## Support matrix
 
@@ -26,13 +33,13 @@ The plugin declares `api-version: 1.21`; older servers intentionally refuse to l
 ## Installation
 
 1. Use Java 21 for Minecraft 1.21.x or Java 25 for Minecraft 26.1+.
-2. Put `LoadScreenShield-2.0.0.jar` in the server's `plugins` directory.
+2. Put `LoadScreenShield-2.0.1.jar` in the server's `plugins` directory.
 3. PacketEvents is not required. Floodgate is optional.
 4. Restart the server. Avoid production hot-reload tools; a normal restart gives reliable plugin lifecycle ordering.
 
 ## Resource-pack activation modes
 
-`activation-mode: JOIN` is the default and protects immediately after join. Use it when Velocity/BungeeCord or another proxy sends the pack and the backend may not see the initial request.
+`activation-mode: JOIN` is the default and protects immediately after join. Use it when Velocity/BungeeCord or another proxy sends the pack and the backend may not see the initial request. If a cached pack has already reported success or failure, the delayed join task does not open a stale waiting session.
 
 `activation-mode: RESOURCE_PACK_STATUS` starts protection only after the backend receives `ACCEPTED`, `DOWNLOADED`, or an unknown future in-progress status. Use it when the backend sends the pack itself.
 
@@ -41,7 +48,7 @@ Success removes the shield. Decline, download/reload failure, invalid URL, or di
 ## Configuration
 
 ```yaml
-schema-version: 2
+schema-version: 3
 lang: en
 prefix: "<gray>[<gold>LoadScreenShield</gold>]</gray> "
 activation-mode: JOIN
@@ -59,7 +66,7 @@ protection:
   cancel-teleports: true
 ```
 
-Reload safe configuration snapshots with `/loadscreenshield reload` (`loadscreenshield.admin`). Existing custom keys are retained. Invalid language names cannot escape the plugin language directory.
+Reload safe configuration snapshots with `/loadscreenshield reload` (`loadscreenshield.admin`). On startup or reload, missing keys are restored in documented order, invalid known values are replaced or clamped, and unknown keys are removed. Before any existing file is rewritten, the original is copied to `config.yml.backup-<timestamp>-<content-hash>.yml`. Identical invalid content does not create another backup and at most 10 automatic config backups are retained. A config with a newer schema version is rejected without rewriting, preventing an older plugin from deleting future settings. Invalid language names cannot escape the plugin language directory.
 
 ## Build and test
 
@@ -70,17 +77,17 @@ mvn clean verify
 mvn -Ppaper-1.21 clean verify
 ```
 
-The first command verifies the 26.2 upper bound; the profile verifies source compatibility with the 1.21.1 lower bound. The test suite covers every known 26.2 status, unknown future states, duplicate callbacks, and multi-pack completion.
+The first command verifies the 26.2 upper bound; the profile verifies source compatibility with the 1.21.1 lower bound. The test suite covers every known 26.2 status, cached terminal status ordering, unknown future states, duplicate callbacks, multi-pack completion, config migration, malformed YAML, backup deduplication and backup retention bounds.
 
 ## Upgrade and rollback
 
-Version 2.0 adds missing config keys but does not delete custom keys or player/world data. Back up the plugin folder before upgrading. To roll back, stop the server, restore the previous JAR and the backed-up config, then restart. No database or world migration is performed.
+Version 2.0.1 migrates config schema 2 to 3. It removes unknown config keys only after preserving the original in an automatic backup; it does not modify player or world data. To roll back, stop the server, restore the previous JAR and the matching `config.yml.backup-...yml` as `config.yml`, then restart. No database or world migration is performed.
 
 ---
 
 ## Türkçe kısa rehber
 
-LoadScreenShield, kaynak paketi indirilip uygulanırken Java oyuncularını korur. 2.0 sürümünde ham PacketEvents blok paketleri kaldırılmıştır; blok değişikliklerini Paper doğru istemci protokolüne göre kodlar. PacketEvents artık gerekmez, Floodgate isteğe bağlıdır.
+LoadScreenShield, kaynak paketi indirilip uygulanırken Java oyuncularını korur. 2.0.1 sürümü hızlı uygulanan önbellek paketlerinin bekleme yarışını düzeltir; eksik config anahtarlarını açıklamalarıyla doğru sıraya ekler, hatalı değerleri düzeltir ve bilinmeyen anahtarları yedek aldıktan sonra siler. Aynı bozuk içerik tekrar yedeklenmez ve en fazla 10 otomatik config yedeği tutulur. PacketEvents gerekmez, Floodgate isteğe bağlıdır.
 
 - Minecraft 1.21.1–1.21.11: Java 21+
 - Minecraft 26.1–26.2: Java 25+

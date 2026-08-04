@@ -1,30 +1,46 @@
-# LoadScreenShield configuration schema. Unknown/custom keys are preserved on reload.
-schema-version: 2
+# LoadScreenShield configuration schema. Managed automatically; do not edit this value.
+schema-version: 3
 
-# Bundled values: en, tr. Custom file names may use letters, numbers, '_' and '-'.
+# Language file from plugins/LoadScreenShield/lang/<value>.yml.
+# Bundled values: en, tr. Custom names may contain A-Z, a-z, 0-9, '_' and '-' (max 32).
 lang: en
+
+# Message prefix in MiniMessage format. Use "" for no prefix (max 1024 characters).
 prefix: "<gray>[<gold>LoadScreenShield</gold>]</gray> "
 
-# JOIN protects immediately and is recommended when a proxy sends the pack.
-# RESOURCE_PACK_STATUS begins protection when ACCEPTED/DOWNLOADED is reported.
+# Available values: JOIN, RESOURCE_PACK_STATUS.
+# JOIN: protect on join; use when a proxy sends the pack or immediate protection is required.
+# RESOURCE_PACK_STATUS: protect only after this backend receives an in-progress pack status.
+# Cached packs already reported as terminal are never placed into a new JOIN wait session.
 activation-mode: JOIN
 
-# Safety bounds: 5-1800 seconds. Unknown future statuses remain protected until this timeout.
+# Whole seconds before fail-safe release. Allowed range: 5..1800.
+# Unknown future resource-pack statuses remain protected until this timeout.
 timeout-seconds: 120
 
-# Client-only overlay. Safety bounds: radius 1-4 (27-729 block states before world-height clipping).
+# Client-only block overlay radius. Allowed range: 1..4.
+# Packet volume before world-height clipping: 1=27, 2=125, 3=343, 4=729 blocks.
 shield-box-radius: 2
+
+# Bukkit block material used for the client-only overlay. Must be a valid block material name.
+# Examples: BLACK_WOOL, BLACK_CONCRETE, OBSIDIAN.
 shield-block-type: BLACK_WOOL
 
 title:
+  # Available values: true, false. Shows the loading title while protection is active.
   enabled: true
 
 bedrock:
-  # Floodgate is optional and linked without bundling its API.
+  # Available values: true, false.
+  # true bypasses Floodgate/Bedrock players; Floodgate is optional and detected at runtime.
   ignore-floodgate: true
 
 protection:
+  # Available values: true, false. Master switch for the complete shield system.
   enabled: true
+  # Available values: true, false. Cancels position-changing movement while shielded.
   cancel-movement: true
+  # Available values: true, false. Cancels player commands while shielded.
   cancel-commands: true
+  # Available values: true, false. Cancels teleports while shielded.
   cancel-teleports: true
